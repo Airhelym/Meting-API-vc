@@ -1,14 +1,3 @@
-以下是优化后的 `index-1.php`。
-
-### 优化说明：
-1.  **修复缓存 Bug**：修复了原 `index-1.php` 中 `playlist` 缓存模式下 `$playlist_json` 变量未定义导致无法写入缓存文件的问题。
-2.  **增强 APCU 缓存**：参考 `index-2.php` 的逻辑，为 `song` 类型也增加了 APCU 缓存（缓存最终构造好的 JSON 响应），减少重复构造开销。
-3.  **统一缓存键名**：统一了 APCU 缓存键名的生成规则，避免冲突。
-4.  **保留完整功能**：保留了 `index-1.php` 原有的 `search`、`album`、`artist` 等 `index-2.php` 缺失的功能。
-5.  **代码清理**：去除了重复的参数检查代码，统一了 JSON 编码格式（`JSON_UNESCAPED_UNICODE`），增强了兼容性。
-6.  **安全性**：保留了 `index-1.php` 的生产环境错误处理配置。
-
-```php
 <?php
 // 生产环境：关闭错误显示，防止路径泄露
 ini_set('display_errors', 'Off');
@@ -378,4 +367,3 @@ function return_error($message)
     http_response_code(404);
     return_json(['error' => $message]);
 }
-```
