@@ -191,8 +191,32 @@ switch ($type) {
         return_text($song->name);
         break;
 
+//    case 'url':
+//        // 获取音频直链 (来自 index-1，带 APCU 缓存)
+//        if (APCU_CACHE) {
+//            $apcu_key = $server . '_url_' . $id;
+//            if (apcu_exists($apcu_key)) {
+//                $url_data = apcu_fetch($apcu_key);
+//                return_redirect($url_data->url);
+//            }
+//        }
+//        $br = isset($_GET['br']) ? (int)$_GET['br'] : 320;
+//        $m_url = json_decode($api->url($id, $br))->url;
+//        if ($m_url == '') {
+//            return_error('Failed to get audio URL');
+//        }
+//        // 特殊处理：强制 HTTPS
+//        if ($server == 'netease' || $server == 'tencent') {
+//            $m_url = str_replace('http://', 'https://', $m_url);
+//        }
+//        if (APCU_CACHE) {
+//            apcu_store($apcu_key, ['url' => $m_url], 600);
+//        }
+//        return_redirect($m_url);
+//        break;
     case 'url':
-        // 获取音频直链 (来自 index-1，带 APCU 缓存)
+        // 获取音频直链
+        // 短期缓存处理
         if (APCU_CACHE) {
             $apcu_key = $server . '_url_' . $id;
             if (apcu_exists($apcu_key)) {
@@ -200,21 +224,31 @@ switch ($type) {
                 return_redirect($url_data->url);
             }
         }
+
+        // 获取比特率 (br)
         $br = isset($_GET['br']) ? (int)$_GET['br'] : 320;
+
         $m_url = json_decode($api->url($id, $br))->url;
         if ($m_url == '') {
             return_error('Failed to get audio URL');
         }
-        // 特殊处理：强制 HTTPS
-        if ($server == 'netease' || $server == 'tencent') {
+
+        // 特殊处理：网易云音乐使用 HTTPS
+        if ($server == 'netease') {
             $m_url = str_replace('http://', 'https://', $m_url);
         }
+
+        if ($server == 'tencent') {
+            $m_url = str_replace('http://', 'https://', $m_url);
+        }
+
+        // 缓存 URL
         if (APCU_CACHE) {
-            apcu_store($apcu_key, ['url' => $m_url], 600);
+            apcu_store($apcu_key, ['url' => $m_url], 600); // 缓存10分钟
         }
         return_redirect($m_url);
         break;
-
+        
     case 'pic':
         // 获取图片直链 (来自 index-1，带 APCU 缓存)
         if (APCU_CACHE) {
@@ -234,7 +268,7 @@ switch ($type) {
 
     case 'lrc':
     case 'lyric':
-        // 获取歌词
+        // 获取歌词 (来自 index-1，修复解析逻辑)
         if (APCU_CACHE) {
             $apcu_key = $server . '_lrc_' . $id;
             if (apcu_exists($apcu_key)) {
@@ -242,16 +276,19 @@ switch ($type) {
                 return_text($lrc_text);
             }
         }
-
         $lrc_data = json_decode($api->lyric($id));
-        if ($lrc_data->lyric == '') {
-            $lrc = '[00:00.00]这似乎是一首纯音乐呢，请尽情欣赏它吧！';
-        } else if ($lrc_data->tlyric == '' || !TLYRIC) {
-            $lrc = $lrc_data->lyric;
+        // 兼容不同版本的返回结构
+        $lyric_content = $lrc_data->lyric ?? '';
+        $tlyric_content = $lrc_data->tlyric ?? '';
+
+        if ($lyric_content == '') {
+            $lrc = '[00:00.00] 这似乎是一首纯音乐呢，请尽情欣赏它吧！';
+        } else if ($tlyric_content == '' || !TLYRIC) {
+            $lrc = $lyric_content;
         } else {
             // 合并中译歌词
-            $lrc_arr = explode("\n", $lrc_data->lyric);
-            $lrc_cn_arr = explode("\n", $lrc_data->tlyric);
+            $lrc_arr = explode("\n", $lyric_content);
+            $lrc_cn_arr = explode("\n", $tlyric_content);
             $lrc_cn_map = [];
             foreach ($lrc_cn_arr as $line) {
                 if (trim($line) == '') continue;
@@ -273,13 +310,11 @@ switch ($type) {
             }
             $lrc = implode("\n", $lrc_arr);
         }
-
         if (APCU_CACHE) {
             apcu_store($apcu_key, $lrc, 36000);
         }
         return_text($lrc);
         break;
-
 
     default:
         return_error('Unknown type: ' . $type);
