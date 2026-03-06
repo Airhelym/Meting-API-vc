@@ -4,15 +4,16 @@
 
 #  Meting-API For Vecerl
 
-```Tips: 如果是用于anzhiyu之类的hexo主题，此项目无法播放```
-
-
-
 ## Descriptions
 
 - 这是基于 [Meting](https://github.com/metowolf/Meting) 创建的 APlayer API
 - 灵感源于 [https://api.fczbl.vip/163/](https://api.fczbl.vip/163/)
 - 部分参考 [Meting-API](https://github.com/metowolf/Meting-API)
+- 部分参考 [vercel-meting-api](https://github.com/jinghuashang/vercel-meting-api)
+
+该仓库为 Vercel 部署提供支持，并补充了对 search 参数的解析（非破解，即无法解析完整 VIP 歌曲）
+
+-----
 
 ## Build Setup
 

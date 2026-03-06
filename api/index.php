@@ -1,5 +1,5 @@
 <?php
-// 生产环境：关闭错误显示，防止路径泄露
+// 生产环境：关闭错误显示，防止路径泄露 (来自 index-1)
 ini_set('display_errors', 'Off');
 error_reporting(0);
 
@@ -16,27 +16,9 @@ define('APCU_CACHE', false);
 define('AUTH', false);
 define('AUTH_SECRET', 'meting-secret');
 
-// 允许跨站
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET');
-
-// 检查参数是否缺失
+// 检查参数是否缺失 (来自 index-2，保留公共页面 fallback)
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
-    // 保留 index-2 的前端页面支持
-    if (file_exists(__DIR__ . '/public/index.php')) {
-        include __DIR__ . '/public/index.php';
-    } else {
-        header('Content-Type: text/html; charset=utf-8');
-        http_response_code(400);
-        echo "<!DOCTYPE html>
-<html>
-<head><meta charset='utf-8'><title>400 Bad Request</title></head>
-<body>
-<h1>400 Bad Request</h1>
-<p>Missing required parameters: <code>type</code> and <code>id</code>.</p>
-</body>
-</html>";
-    }
+    include __DIR__ . '/public/index.php';
     exit;
 }
 
@@ -57,7 +39,11 @@ if (AUTH) {
     }
 }
 
-// 包含 Meting 核心库
+// 允许跨站 (来自 index-2)
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET');
+
+// 包含 Meting 核心库 (保留 index-2 的路径大小写)
 include __DIR__ . '/src/Meting.php';
 use Metowolf\Meting;
 
@@ -65,7 +51,7 @@ use Metowolf\Meting;
 $api = new Meting($server);
 $api->format(true);
 
-// 修复腾讯 Cookie 缺少 uin 的问题（来自 index-1）
+// 修复腾讯 Cookie 缺少 uin 的问题 (来自 index-1)
 if ($server === 'tencent') {
     $currentCookie = $api->header['Cookie'] ?? '';
     if (!preg_match('/uin=\d+/', $currentCookie)) {
@@ -74,38 +60,14 @@ if ($server === 'tencent') {
     }
 }
 
-// 设置 Content-Type
-if (in_array($type, ['song', 'playlist', 'search', 'album', 'artist'])) {
-    header('Content-Type: application/json; charset=utf-8');
-} else if (in_array($type, ['name', 'lrc', 'lyric'])) {
-    header('Content-Type: text/plain; charset=utf-8');
-}
-
-// 处理不同的 type
+// 处理不同的 type (融合 index-1 的 switch 结构与 index-2 的逻辑)
 switch ($type) {
-    case 'song':
-        // 获取单曲信息
-        $data = $api->song($id);
-        if ($data == '[]' || $data == 'null') {
-            return_error('Unknown song ID');
-        }
-        $song = json_decode($data)[0];
-        // 构造符合官方示例返回格式的响应
-        $response = [
-            'name'   => $song->name,
-            'artist' => implode('/', $song->artist),
-            'url'    => API_URI . '?server=' . $server . '&type=url&id=' . $song->url_id . (AUTH ? '&auth=' . auth($server . 'url' . $song->url_id) : ''),
-            'pic'    => API_URI . '?server=' . $server . '&type=pic&id=' . $song->pic_id . (AUTH ? '&auth=' . auth($server . 'pic' . $song->pic_id) : ''),
-            'lrc'    => API_URI . '?server=' . $server . '&type=lrc&id=' . $song->lyric_id . (AUTH ? '&auth=' . auth($server . 'lrc' . $song->lyric_id) : '')
-        ];
-        return_json([$response]);
-        break;
-        
     case 'playlist':
-        // 缓存处理
+        // 缓存处理 (来自 index-2)
         if (CACHE) {
             $file_path = __DIR__ . '/cache/playlist/' . $server . '_' . $id . '.json';
             if (file_exists($file_path) && (time() - filemtime($file_path) < CACHE_TIME)) {
+                header('Content-Type: application/json; charset=utf-8');
                 echo file_get_contents($file_path);
                 exit;
             }
@@ -130,15 +92,15 @@ switch ($type) {
         if (CACHE) {
             $cache_dir = dirname($file_path);
             if (!is_dir($cache_dir)) mkdir($cache_dir, 0755, true);
-            file_put_contents($file_path, json_encode($playlist, JSON_UNESCAPED_UNICODE));
+            $playlist_json = json_encode($playlist, JSON_UNESCAPED_UNICODE);
+            file_put_contents($file_path, $playlist_json);
         }
         return_json($playlist);
         break;
-        
+
     case 'search':
-        // 获取搜索关键词（来自 index-1）
+        // 获取搜索关键词 (来自 index-1)
         $keyword = $id;
-        // 可以通过其他参数（如 page, limit）来控制搜索结果
         $option = [];
         if (isset($_GET['page'])) $option['page'] = (int)$_GET['page'];
         if (isset($_GET['limit'])) $option['limit'] = (int)$_GET['limit'];
@@ -160,9 +122,9 @@ switch ($type) {
         }
         return_json($results);
         break;
-        
+
     case 'album':
-        // 获取专辑（来自 index-1）
+        // 获取专辑 (来自 index-1)
         $data = $api->album($id);
         if ($data == '[]' || $data == 'null') {
             return_error('Unknown album ID');
@@ -180,9 +142,9 @@ switch ($type) {
         }
         return_json($album_songs);
         break;
-        
+
     case 'artist':
-        // 获取艺术家热门歌曲（来自 index-1）
+        // 获取艺术家热门歌曲 (来自 index-1，功能增强)
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 50;
         $data = $api->artist($id, $limit);
         if ($data == '[]' || $data == 'null') {
@@ -201,54 +163,78 @@ switch ($type) {
         }
         return_json($artist_songs);
         break;
-        
+
+    case 'song':
+        // 获取单曲信息 (来自 index-1，结构更完整)
+        $data = $api->song($id);
+        if ($data == '[]' || $data == 'null') {
+            return_error('Unknown song ID');
+        }
+        $song = json_decode($data)[0];
+        $response = [
+            'name'   => $song->name,
+            'artist' => implode('/', $song->artist),
+            'url'    => API_URI . '?server=' . $server . '&type=url&id=' . $song->url_id . (AUTH ? '&auth=' . auth($server . 'url' . $song->url_id) : ''),
+            'pic'    => API_URI . '?server=' . $server . '&type=pic&id=' . $song->pic_id . (AUTH ? '&auth=' . auth($server . 'pic' . $song->pic_id) : ''),
+            'lrc'    => API_URI . '?server=' . $server . '&type=lrc&id=' . $song->lyric_id . (AUTH ? '&auth=' . auth($server . 'lrc' . $song->lyric_id) : '')
+        ];
+        return_json([$response]);
+        break;
+    
+    case 'name':
+        // 获取歌曲名称 (来自 index-2 特有功能)
+        $data = $api->song($id);
+        if ($data == '[]' || $data == 'null') {
+            return_error('Unknown song ID');
+        }
+        $song = json_decode($data)[0];
+        return_text($song->name);
+        break;
+
     case 'url':
-        // 获取音频直链
-        // 短期缓存处理
+        // 获取音频直链 (来自 index-1，带 APCU 缓存)
         if (APCU_CACHE) {
             $apcu_key = $server . '_url_' . $id;
             if (apcu_exists($apcu_key)) {
                 $url_data = apcu_fetch($apcu_key);
-                return_redirect($url_data['url']);
+                return_redirect($url_data->url);
             }
         }
-        // 获取比特率 (br)
         $br = isset($_GET['br']) ? (int)$_GET['br'] : 320;
         $m_url = json_decode($api->url($id, $br))->url;
         if ($m_url == '') {
             return_error('Failed to get audio URL');
         }
-        // 特殊处理：网易云音乐和腾讯音乐使用 HTTPS
+        // 特殊处理：强制 HTTPS
         if ($server == 'netease' || $server == 'tencent') {
             $m_url = str_replace('http://', 'https://', $m_url);
         }
-        // 缓存 URL
         if (APCU_CACHE) {
-            apcu_store($apcu_key, ['url' => $m_url], 600); // 缓存 10 分钟
+            apcu_store($apcu_key, ['url' => $m_url], 600);
         }
         return_redirect($m_url);
         break;
-        
+
     case 'pic':
-        // 获取图片直链
+        // 获取图片直链 (来自 index-1，带 APCU 缓存)
         if (APCU_CACHE) {
             $apcu_key = $server . '_pic_' . $id;
             if (apcu_exists($apcu_key)) {
                 $pic_data = apcu_fetch($apcu_key);
-                return_redirect($pic_data['url']);
+                return_redirect($pic_data->url);
             }
         }
         $size = isset($_GET['size']) ? (int)$_GET['size'] : 90;
         $pic_url = json_decode($api->pic($id, $size))->url;
         if (APCU_CACHE) {
-            apcu_store($apcu_key, ['url' => $pic_url], 36000); // 缓存 10 小时
+            apcu_store($apcu_key, ['url' => $pic_url], 36000);
         }
         return_redirect($pic_url);
         break;
-        
+
     case 'lrc':
     case 'lyric':
-        // 获取歌词
+        // 获取歌词 (来自 index-1，修复解析逻辑)
         if (APCU_CACHE) {
             $apcu_key = $server . '_lrc_' . $id;
             if (apcu_exists($apcu_key)) {
@@ -257,14 +243,18 @@ switch ($type) {
             }
         }
         $lrc_data = json_decode($api->lyric($id));
-        if ($lrc_data->lyric == '') {
+        // 兼容不同版本的返回结构
+        $lyric_content = $lrc_data->lyric ?? '';
+        $tlyric_content = $lrc_data->tlyric ?? '';
+
+        if ($lyric_content == '') {
             $lrc = '[00:00.00] 这似乎是一首纯音乐呢，请尽情欣赏它吧！';
-        } else if ($lrc_data->tlyric == '' || !TLYRIC) {
-            $lrc = $lrc_data->lyric;
+        } else if ($tlyric_content == '' || !TLYRIC) {
+            $lrc = $lyric_content;
         } else {
-            // 合并中译歌词（来自 index-1 的完善版本）
-            $lrc_arr = explode("\n", $lrc_data->lyric);
-            $lrc_cn_arr = explode("\n", $lrc_data->tlyric);
+            // 合并中译歌词
+            $lrc_arr = explode("\n", $lyric_content);
+            $lrc_cn_arr = explode("\n", $tlyric_content);
             $lrc_cn_map = [];
             foreach ($lrc_cn_arr as $line) {
                 if (trim($line) == '') continue;
@@ -291,32 +281,19 @@ switch ($type) {
         }
         return_text($lrc);
         break;
-        
-    case 'name':
-        // 获取歌曲名称（保留 index-2 功能）
-        $song_data = $api->song($id);
-        if ($song_data == '[]' || $song_data == 'null') {
-            return_error('Unknown song ID');
-        }
-        $song = json_decode($song_data)[0];
-        return_text($song->name);
-        break;
-        
+
     default:
         return_error('Unknown type: ' . $type);
         break;
 }
 
-// --- 辅助函数 ---
+// --- 辅助函数 (来自 index-1，优化结构) ---
 function api_uri()
 {
-    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://';
-    $request_uri = strtok($_SERVER['REQUEST_URI'], '?');
-    // 移除文件名部分（来自 index-1）
-    if (strpos($request_uri, 'api.php') !== false) {
-        $request_uri = str_replace('api.php', 'api', $request_uri);
-    }
-    return $protocol . $_SERVER['HTTP_HOST'] . $request_uri;
+    // 使用 index-2 的逻辑以适应当前入口文件结构
+    return (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://') 
+           . $_SERVER['HTTP_HOST'] 
+           . strtok($_SERVER['REQUEST_URI'], '?');
 }
 
 function auth($name)
