@@ -1,8 +1,18 @@
+以下是优化后的 `index-1.php`。
+
+### 优化说明：
+1.  **修复缓存 Bug**：修复了原 `index-1.php` 中 `playlist` 缓存模式下 `$playlist_json` 变量未定义导致无法写入缓存文件的问题。
+2.  **增强 APCU 缓存**：参考 `index-2.php` 的逻辑，为 `song` 类型也增加了 APCU 缓存（缓存最终构造好的 JSON 响应），减少重复构造开销。
+3.  **统一缓存键名**：统一了 APCU 缓存键名的生成规则，避免冲突。
+4.  **保留完整功能**：保留了 `index-1.php` 原有的 `search`、`album`、`artist` 等 `index-2.php` 缺失的功能。
+5.  **代码清理**：去除了重复的参数检查代码，统一了 JSON 编码格式（`JSON_UNESCAPED_UNICODE`），增强了兼容性。
+6.  **安全性**：保留了 `index-1.php` 的生产环境错误处理配置。
+
+```php
 <?php
 // 生产环境：关闭错误显示，防止路径泄露
 ini_set('display_errors', 'Off');
 error_reporting(0);
-
 // 可选：将错误记录到日志
 // ini_set('log_errors', 'On');
 // ini_set('error_log', '/path/to/your/error.log');
@@ -11,12 +21,24 @@ error_reporting(0);
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET');
 
-// 检查参数是否缺失
+// 设置配置项
+// 设置 API 路径
+define('API_URI', api_uri());
+// 设置中文歌词
+define('TLYRIC', true);
+// 设置歌单文件缓存及时间
+define('CACHE', false);
+define('CACHE_TIME', 86400);
+// 设置短期缓存 - 需要安装 apcu 扩展
+define('APCU_CACHE', false);
+// 设置 AUTH 密钥 - 更改'meting-secret'
+define('AUTH', false);
+define('AUTH_SECRET', 'meting-secret');
+
+// 检查必需的参数
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
-    // 设置 Content-Type 为 HTML
     header('Content-Type: text/html; charset=utf-8');
     http_response_code(400);
-    // 不再尝试读取本地文件，避免路径泄露
     echo "<!DOCTYPE html>
 <html>
 <head><meta charset='utf-8'><title>400 Bad Request</title></head>
@@ -28,28 +50,6 @@ if (!isset($_GET['type']) || !isset($_GET['id'])) {
     exit;
 }
 
-// 设置API路径
-define('API_URI', api_uri());
-// 设置中文歌词
-define('TLYRIC', true);
-// 设置歌单文件缓存及时间
-define('CACHE', false);
-define('CACHE_TIME', 86400);
-// 设置短期缓存-需要安装apcu
-define('APCU_CACHE', false);
-// 设置AUTH密钥-更改'meting-secret'
-define('AUTH', false);
-define('AUTH_SECRET', 'meting-secret');
-
-// 检查必需的参数
-// 官方示例中，搜索时 'id' 是关键词，其他情况是ID
-// if (!isset($_GET['type']) || !isset($_GET['id'])) {
-//     // 如果参数不全，可以返回一个简单的帮助页面或错误
-//     http_response_code(400);
-//     echo json_encode(['error' => 'Missing required parameters: type and id']);
-//     exit;
-// }
-
 $server = isset($_GET['server']) ? $_GET['server'] : 'netease'; // 默认网易云
 $type = $_GET['type'];
 $id = $_GET['id'];
@@ -57,18 +57,19 @@ $id = $_GET['id'];
 // 验证 AUTH（如果开启）
 if (AUTH) {
     $auth = isset($_GET['auth']) ? $_GET['auth'] : '';
-    // 对于需要鉴权的资源类型（url, pic, lrc），检查auth参数
-    if (in_array($type, ['url', 'pic', 'lrc'])) {
+    // 对于需要鉴权的资源类型（url, pic, lrc），检查 auth 参数
+    if (in_array($type, ['url', 'pic', 'lrc', 'lyric'])) {
         if ($auth == '' || $auth != auth($server . $type . $id)) {
             http_response_code(403);
-            echo json_encode(['error' => 'Forbidden']);
+            echo json_encode(['error' => 'Forbidden'], JSON_UNESCAPED_UNICODE);
             exit;
         }
     }
 }
 
 // 包含 Meting 核心库
-include __DIR__ . '/src/meting.php'; // 请根据实际路径调整
+// 注意：请确保路径正确，大小写敏感
+include __DIR__ . '/src/meting.php'; 
 use Metowolf\Meting;
 
 // 创建 Meting 实例
@@ -83,15 +84,26 @@ if ($server === 'tencent') {
         $api->header['Cookie'] = 'uin=1234567890; ' . $currentCookie;
     }
 }
+
 // 处理不同的 type
 switch ($type) {
     case 'song':
+        // APCU 缓存检查
+        if (APCU_CACHE) {
+            $apcu_key = $server . '_song_' . $id;
+            if (apcu_exists($apcu_key)) {
+                $cached_data = apcu_fetch($apcu_key);
+                return_json($cached_data);
+            }
+        }
+
         // 获取单曲信息
         $data = $api->song($id);
         if ($data == '[]' || $data == 'null') {
             return_error('Unknown song ID');
         }
         $song = json_decode($data)[0];
+        
         // 构造符合官方示例返回格式的响应
         $response = [
             'name'   => $song->name,
@@ -100,14 +112,23 @@ switch ($type) {
             'pic'    => API_URI . '?server=' . $server . '&type=pic&id=' . $song->pic_id . (AUTH ? '&auth=' . auth($server . 'pic' . $song->pic_id) : ''),
             'lrc'    => API_URI . '?server=' . $server . '&type=lrc&id=' . $song->lyric_id . (AUTH ? '&auth=' . auth($server . 'lrc' . $song->lyric_id) : '')
         ];
-        return_json([$response]);
+        
+        $response_data = [$response];
+
+        // 存入 APCU 缓存
+        if (APCU_CACHE) {
+            apcu_store($apcu_key, $response_data, 3600); // 缓存 1 小时
+        }
+
+        return_json($response_data);
         break;
 
     case 'playlist':
-        // 缓存处理
+        // 文件缓存处理
         if (CACHE) {
             $file_path = __DIR__ . '/cache/playlist/' . $server . '_' . $id . '.json';
             if (file_exists($file_path) && (time() - filemtime($file_path) < CACHE_TIME)) {
+                header('Content-Type: application/json; charset=utf-8');
                 echo file_get_contents($file_path);
                 exit;
             }
@@ -130,22 +151,26 @@ switch ($type) {
             ];
         }
 
-        // 缓存歌单
+        // 编码 JSON
+        $playlist_json = json_encode($playlist, JSON_UNESCAPED_UNICODE);
+
+        // 缓存歌单到文件
         if (CACHE) {
             $cache_dir = dirname($file_path);
             if (!is_dir($cache_dir)) mkdir($cache_dir, 0755, true);
             file_put_contents($file_path, $playlist_json);
         }
+
         return_json($playlist);
         break;
 
     case 'search':
         // 获取搜索关键词
-        $keyword = $id; // 在官方示例中，搜索的 'id' 参数是关键词
-        // 可以通过其他参数（如 page, limit）来控制搜索结果
+        $keyword = $id; 
         $option = [];
         if (isset($_GET['page'])) $option['page'] = (int)$_GET['page'];
         if (isset($_GET['limit'])) $option['limit'] = (int)$_GET['limit'];
+        
         // 执行搜索
         $data = $api->search($keyword, $option);
         if ($data == '[]' || $data == 'null') {
@@ -213,30 +238,25 @@ switch ($type) {
             $apcu_key = $server . '_url_' . $id;
             if (apcu_exists($apcu_key)) {
                 $url_data = apcu_fetch($apcu_key);
-                return_redirect($url_data->url);
+                return_redirect($url_data['url']);
             }
         }
 
         // 获取比特率 (br)
         $br = isset($_GET['br']) ? (int)$_GET['br'] : 320;
-
         $m_url = json_decode($api->url($id, $br))->url;
         if ($m_url == '') {
             return_error('Failed to get audio URL');
         }
 
-        // 特殊处理：网易云音乐使用 HTTPS
-        if ($server == 'netease') {
-            $m_url = str_replace('http://', 'https://', $m_url);
-        }
-
-        if ($server == 'tencent') {
+        // 特殊处理：强制 HTTPS
+        if ($server == 'netease' || $server == 'tencent') {
             $m_url = str_replace('http://', 'https://', $m_url);
         }
 
         // 缓存 URL
         if (APCU_CACHE) {
-            apcu_store($apcu_key, ['url' => $m_url], 600); // 缓存10分钟
+            apcu_store($apcu_key, ['url' => $m_url], 600); // 缓存 10 分钟
         }
         return_redirect($m_url);
         break;
@@ -247,14 +267,15 @@ switch ($type) {
             $apcu_key = $server . '_pic_' . $id;
             if (apcu_exists($apcu_key)) {
                 $pic_data = apcu_fetch($apcu_key);
-                return_redirect($pic_data->url);
+                return_redirect($pic_data['url']);
             }
         }
 
         $size = isset($_GET['size']) ? (int)$_GET['size'] : 90;
         $pic_url = json_decode($api->pic($id, $size))->url;
+        
         if (APCU_CACHE) {
-            apcu_store($apcu_key, ['url' => $pic_url], 36000); // 缓存10小时
+            apcu_store($apcu_key, ['url' => $pic_url], 36000); // 缓存 10 小时
         }
         return_redirect($pic_url);
         break;
@@ -272,7 +293,7 @@ switch ($type) {
 
         $lrc_data = json_decode($api->lyric($id));
         if ($lrc_data->lyric == '') {
-            $lrc = '[00:00.00]这似乎是一首纯音乐呢，请尽情欣赏它吧！';
+            $lrc = '[00:00.00] 这似乎是一首纯音乐呢，请尽情欣赏它吧！';
         } else if ($lrc_data->tlyric == '' || !TLYRIC) {
             $lrc = $lrc_data->lyric;
         } else {
@@ -317,12 +338,13 @@ function api_uri()
 {
     $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://';
     $request_uri = strtok($_SERVER['REQUEST_URI'], '?');
-    
-    // 移除文件名部分
-    if (strpos($request_uri, 'api.php') !== false) {
+    // 移除文件名部分，适配重写规则
+    if (strpos($request_uri, 'index.php') !== false) {
+        $request_uri = str_replace('index.php', '', $request_uri);
+    } elseif (strpos($request_uri, 'api.php') !== false) {
         $request_uri = str_replace('api.php', 'api', $request_uri);
     }
-    
+    // 确保路径以 / 结尾或正确处理
     return $protocol . $_SERVER['HTTP_HOST'] . $request_uri;
 }
 
@@ -356,3 +378,4 @@ function return_error($message)
     http_response_code(404);
     return_json(['error' => $message]);
 }
+```
