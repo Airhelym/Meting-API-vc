@@ -234,7 +234,7 @@ switch ($type) {
 
     case 'lrc':
     case 'lyric':
-        // 获取歌词 (来自 index-1，修复解析逻辑)
+        // 获取歌词
         if (APCU_CACHE) {
             $apcu_key = $server . '_lrc_' . $id;
             if (apcu_exists($apcu_key)) {
@@ -242,19 +242,16 @@ switch ($type) {
                 return_text($lrc_text);
             }
         }
-        $lrc_data = json_decode($api->lyric($id));
-        // 兼容不同版本的返回结构
-        $lyric_content = $lrc_data->lyric ?? '';
-        $tlyric_content = $lrc_data->tlyric ?? '';
 
-        if ($lyric_content == '') {
-            $lrc = '[00:00.00] 这似乎是一首纯音乐呢，请尽情欣赏它吧！';
-        } else if ($tlyric_content == '' || !TLYRIC) {
-            $lrc = $lyric_content;
+        $lrc_data = json_decode($api->lyric($id));
+        if ($lrc_data->lyric == '') {
+            $lrc = '[00:00.00]这似乎是一首纯音乐呢，请尽情欣赏它吧！';
+        } else if ($lrc_data->tlyric == '' || !TLYRIC) {
+            $lrc = $lrc_data->lyric;
         } else {
             // 合并中译歌词
-            $lrc_arr = explode("\n", $lyric_content);
-            $lrc_cn_arr = explode("\n", $tlyric_content);
+            $lrc_arr = explode("\n", $lrc_data->lyric);
+            $lrc_cn_arr = explode("\n", $lrc_data->tlyric);
             $lrc_cn_map = [];
             foreach ($lrc_cn_arr as $line) {
                 if (trim($line) == '') continue;
@@ -276,11 +273,13 @@ switch ($type) {
             }
             $lrc = implode("\n", $lrc_arr);
         }
+
         if (APCU_CACHE) {
             apcu_store($apcu_key, $lrc, 36000);
         }
         return_text($lrc);
         break;
+
 
     default:
         return_error('Unknown type: ' . $type);
