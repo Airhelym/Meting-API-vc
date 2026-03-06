@@ -1,11 +1,7 @@
 {
-    "env": {
-        "RUNTIME": "vercel"
-    },
-    "rewrites": [
-        {
-            "source": "/(.*)",
-            "destination": "/api"
-        }
-    ]
+  "functions": {
+    "api/*.php": {
+      "runtime": "vercel-php@latest"
+    }
+  }
 }
