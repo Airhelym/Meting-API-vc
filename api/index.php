@@ -1,42 +1,18 @@
 <?php
 // 生产环境：关闭错误显示，防止路径泄露
-ini_set('display_errors', 'Off');
-error_reporting(0);
-// 在 api.php 开头添加（调试完成后删除）
-if (getenv('NOW_PHP_DEBUG') === '1') {
-    error_log("=== DEBUG INFO ===");
-    error_log("REQUEST_URI: " . $_SERVER['REQUEST_URI']);
-    error_log("SCRIPT_NAME: " . $_SERVER['SCRIPT_NAME']);
-    error_log("DOCUMENT_ROOT: " . ($_SERVER['DOCUMENT_ROOT'] ?? 'N/A'));
-    error_log("API_URI: " . api_uri());
-    error_log("meting.php exists: " . (file_exists(__DIR__ . '/src/meting.php') ? 'YES' : 'NO'));
-}
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 // 允许跨站
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 
-// 检测 Vercel 环境
-if (getenv('VERCEL') === '1') {
-    define('VERCEL', true);
-    // Vercel 上可能需要调整包含路径
-    if (!file_exists(__DIR__ . '/src/meting.php')) {
-        // 尝试备用路径
-        $possible_paths = [
-            __DIR__ . '/../src/meting.php',
-            __DIR__ . '/../../src/meting.php',
-            '/var/task/src/meting.php'
-        ];
-        foreach ($possible_paths as $path) {
-            if (file_exists($path)) {
-                include $path;
-                break;
-            }
-        }
-    }
-}
-
 // 检查参数是否缺失
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
+    include __DIR__ . '/public/index.php';
+    exit;
+
     // 设置 Content-Type 为 HTML
     header('Content-Type: text/html; charset=utf-8');
     http_response_code(400);
@@ -186,7 +162,26 @@ if (AUTH) {
 }
 
 // 包含 Meting 核心库
-include __DIR__ . '/src/meting.php'; // 请根据实际路径调整
+$meting_paths = [
+    __DIR__ . '/src/meting.php',
+    dirname(__DIR__) . '/src/meting.php',
+    '/var/task/api/src/meting.php'
+];
+$meting_loaded = false;
+foreach ($meting_paths as $path) {
+    if (file_exists($path)) {
+        include $path;
+        $meting_loaded = true;
+        break;
+    }
+}
+if (!$meting_loaded) {
+    http_response_code(500);
+    header('Content-Type: application/json');
+    echo json_encode(['error' => 'Meting library missing', 'tried_paths' => $meting_paths]);
+    exit;
+}
+
 use Metowolf\Meting;
 
 // 创建 Meting 实例
@@ -432,18 +427,21 @@ switch ($type) {
 
 // --- 辅助函数 ---
 function api_uri() {
-    $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://';
-    $request_uri = strtok($_SERVER['REQUEST_URI'], '?');
-    
-    // 兼容多种文件名：api.php / index.php / api
-    $request_uri = preg_replace('#/(api\.php|index\.php|api)$#', '/api', $request_uri);
-    
-    // Vercel 特殊处理：如果路由已重写，确保路径正确
-    if (defined('VERCEL') || strpos($_SERVER['DOCUMENT_ROOT'] ?? '', '/var/task') !== false) {
-        $request_uri = '/api';
+    // Vercel 强制 HTTPS，优先使用转发协议
+    $protocol = 'https://';
+    if (!empty($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+        $protocol = $_SERVER['HTTP_X_FORWARDED_PROTO'] . '://';
+    } elseif (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') {
+        $protocol = 'https://';
     }
-    
-    return $protocol . $_SERVER['HTTP_HOST'] . $request_uri;
+
+    $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? 'localhost';
+    $request_uri = strtok($_SERVER['REQUEST_URI'], '?');
+
+    // 兼容 api.php / index.php / 路由重写后的 /api
+    $request_uri = preg_replace('#/(api\.php|index\.php|api)$#', '/api', $request_uri);
+
+    return $protocol . $host . $request_uri;
 }
 
 function auth($name)
