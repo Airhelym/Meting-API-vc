@@ -3,10 +3,9 @@
 ini_set('display_errors', 'Off');
 error_reporting(0);
 
-// 可选：将错误记录到日志
-// ini_set('log_errors', 'On');
-// ini_set('error_log', '/path/to/your/error.log');
-
+// 允许跨站
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
 
 // 检查参数是否缺失
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
