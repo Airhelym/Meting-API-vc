@@ -2,10 +2,38 @@
 // 生产环境：关闭错误显示，防止路径泄露
 ini_set('display_errors', 'Off');
 error_reporting(0);
-
+// 在 api.php 开头添加（调试完成后删除）
+if (getenv('NOW_PHP_DEBUG') === '1') {
+    error_log("=== DEBUG INFO ===");
+    error_log("REQUEST_URI: " . $_SERVER['REQUEST_URI']);
+    error_log("SCRIPT_NAME: " . $_SERVER['SCRIPT_NAME']);
+    error_log("DOCUMENT_ROOT: " . ($_SERVER['DOCUMENT_ROOT'] ?? 'N/A'));
+    error_log("API_URI: " . api_uri());
+    error_log("meting.php exists: " . (file_exists(__DIR__ . '/src/meting.php') ? 'YES' : 'NO'));
+}
 // 允许跨站
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+
+// 检测 Vercel 环境
+if (getenv('VERCEL') === '1') {
+    define('VERCEL', true);
+    // Vercel 上可能需要调整包含路径
+    if (!file_exists(__DIR__ . '/src/meting.php')) {
+        // 尝试备用路径
+        $possible_paths = [
+            __DIR__ . '/../src/meting.php',
+            __DIR__ . '/../../src/meting.php',
+            '/var/task/src/meting.php'
+        ];
+        foreach ($possible_paths as $path) {
+            if (file_exists($path)) {
+                include $path;
+                break;
+            }
+        }
+    }
+}
 
 // 检查参数是否缺失
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
@@ -403,14 +431,16 @@ switch ($type) {
 }
 
 // --- 辅助函数 ---
-function api_uri()
-{
+function api_uri() {
     $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://';
     $request_uri = strtok($_SERVER['REQUEST_URI'], '?');
     
-    // 移除文件名部分
-    if (strpos($request_uri, 'api.php') !== false) {
-        $request_uri = str_replace('api.php', 'api', $request_uri);
+    // 兼容多种文件名：api.php / index.php / api
+    $request_uri = preg_replace('#/(api\.php|index\.php|api)$#', '/api', $request_uri);
+    
+    // Vercel 特殊处理：如果路由已重写，确保路径正确
+    if (defined('VERCEL') || strpos($_SERVER['DOCUMENT_ROOT'] ?? '', '/var/task') !== false) {
+        $request_uri = '/api';
     }
     
     return $protocol . $_SERVER['HTTP_HOST'] . $request_uri;
