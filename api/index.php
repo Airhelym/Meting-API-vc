@@ -47,10 +47,6 @@ define('AUTH_SECRET', 'meting-secret');
 //     exit;
 // }
 
-$server = isset($_GET['server']) ? $_GET['server'] : 'netease'; // 默认网易云
-$type = $_GET['type'];
-$id = $_GET['id'];
-
 // ================= 自定义 Server 配置 =================
 $CUSTOM_SERVERS = [
     'lolic' => [
