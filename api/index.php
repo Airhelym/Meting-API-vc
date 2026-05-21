@@ -10,9 +10,17 @@ header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 // 检查参数是否缺失
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
-    http_response_code(400);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['error' => 'Missing required parameters: type and id']);
+    $public_index = __DIR__ . '/public/index.php';
+    if (file_exists($public_index)) {
+        include $public_index;
+    } else {
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(400);
+        echo json_encode([
+            'error' => 'Missing required parameters: type and id',
+            'docs'  => 'Please visit /public/index.php for documentation & demo.'
+        ]);
+    }
     exit;
 }
 
