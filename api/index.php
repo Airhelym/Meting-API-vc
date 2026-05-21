@@ -9,9 +9,9 @@ error_reporting(0);
 // ini_set('error_log', '/path/to/your/error.log');
 
 // 允许跨域。若为 Vercel 环境或未配置 .htaccess 重写则取消注释
-// header('Access-Control-Allow-Origin: *');
-// header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-// header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
 
 if (!isset($_GET['type']) || !isset($_GET['id'])) {
     $public_index = __DIR__ . '/public/index.php';
